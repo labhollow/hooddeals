@@ -61,9 +61,10 @@ export class DatabaseStorage implements IStorage {
       and(
         eq(deals.status, "active"),
         sql`ST_DWithin(
-          ST_GeomFromGeoJSON(${deals.location}), 
-          ST_SetSRID(ST_GeomFromText(${point}), 4326), 
-          ${radius * 1000}
+          ST_SetSRID(ST_GeomFromGeoJSON(${deals.location}::text), 4326),
+          ST_SetSRID(ST_GeomFromText(${point}), 4326),
+          ${radius * 1000},
+          true
         )`
       )
     );

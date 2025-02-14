@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DealMap from "@/components/map/DealMap";
 import DealCard from "@/components/deals/DealCard";
@@ -13,10 +13,30 @@ export default function Home() {
 
   const { data: deals, isLoading } = useQuery<Deal[]>({
     queryKey: ['/api/deals', location, radius],
-    queryFn: () => 
-      fetch(`/api/deals?lat=${location.lat}&lng=${location.lng}&radius=${radius}`)
-        .then(r => r.json())
+    queryFn: async () => {
+      console.log('Fetching deals with params:', { location, radius }); // Debug log
+      const response = await fetch(`/api/deals?lat=${location.lat}&lng=${location.lng}&radius=${radius}`);
+      const data = await response.json();
+      console.log('API Response:', data); // Debug log
+      return data;
+    }
   });
+
+  useEffect(() => {
+    // Try to get user's location on mount
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        console.log('Got user location:', position.coords); // Debug log
+        setLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        });
+      },
+      (error) => {
+        console.error('Error getting location:', error);
+      }
+    );
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -30,13 +50,18 @@ export default function Home() {
           />
         </div>
         <Button variant="outline" onClick={() => {
-          // In a real app, get user's location
-          navigator.geolocation.getCurrentPosition((position) => {
-            setLocation({
-              lat: position.coords.latitude,
-              lng: position.coords.longitude
-            });
-          });
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              console.log('Updating location:', position.coords); // Debug log
+              setLocation({
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+              });
+            },
+            (error) => {
+              console.error('Error getting location:', error);
+            }
+          );
         }}>
           Use my location
         </Button>
@@ -61,9 +86,13 @@ export default function Home() {
                 <div key={i} className="h-48 bg-muted animate-pulse rounded-lg" />
               ))}
             </div>
-          ) : deals?.map((deal) => (
-            <DealCard key={deal.id} deal={deal} />
-          ))}
+          ) : deals?.length === 0 ? (
+            <p className="text-muted-foreground">No deals found in this area yet.</p>
+          ) : (
+            deals?.map((deal) => (
+              <DealCard key={deal.id} deal={deal} />
+            ))
+          )}
         </div>
       </div>
     </div>
