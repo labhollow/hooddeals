@@ -8,18 +8,22 @@ import { Search } from "lucide-react";
 import type { Deal } from "@shared/schema";
 
 export default function Home() {
-  const [location, setLocation] = useState({ lat: 40.7128, lng: -74.0060 });
-  const [radius, setRadius] = useState(5);
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [radius] = useState(5);
 
+  // Only fetch deals when we have a valid location
   const { data: deals, isLoading } = useQuery<Deal[]>({
-    queryKey: ['/api/deals', location, radius],
+    queryKey: ['/api/deals', location?.lat, location?.lng, radius],
+    enabled: !!location,
     queryFn: async () => {
+      if (!location) return [];
       console.log('Fetching deals with params:', { location, radius }); // Debug log
       const response = await fetch(`/api/deals?lat=${location.lat}&lng=${location.lng}&radius=${radius}`);
       const data = await response.json();
       console.log('API Response:', data); // Debug log
       return data;
-    }
+    },
+    staleTime: 30000, // Prevent frequent refetches
   });
 
   useEffect(() => {
@@ -34,9 +38,26 @@ export default function Home() {
       },
       (error) => {
         console.error('Error getting location:', error);
+        // Set default location if geolocation fails
+        setLocation({ lat: 40.7128, lng: -74.0060 });
       }
     );
-  }, []);
+  }, []); // Only run once on mount
+
+  const handleLocationUpdate = () => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        console.log('Updating location:', position.coords); // Debug log
+        setLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        });
+      },
+      (error) => {
+        console.error('Error getting location:', error);
+      }
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -49,20 +70,11 @@ export default function Home() {
             // In a real app, integrate with Google Places Autocomplete
           />
         </div>
-        <Button variant="outline" onClick={() => {
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              console.log('Updating location:', position.coords); // Debug log
-              setLocation({
-                lat: position.coords.latitude,
-                lng: position.coords.longitude
-              });
-            },
-            (error) => {
-              console.error('Error getting location:', error);
-            }
-          );
-        }}>
+        <Button 
+          variant="outline" 
+          onClick={handleLocationUpdate}
+          disabled={isLoading}
+        >
           Use my location
         </Button>
       </div>
@@ -72,8 +84,15 @@ export default function Home() {
           <div className="bg-card rounded-lg overflow-hidden h-[400px] md:h-[600px]">
             <DealMap 
               deals={deals || []}
-              center={location}
-              onLocationChange={setLocation}
+              center={location || { lat: 40.7128, lng: -74.0060 }}
+              onLocationChange={(newLocation) => {
+                // Only update if significantly different to prevent loops
+                if (!location || 
+                    Math.abs(location.lat - newLocation.lat) > 0.0001 ||
+                    Math.abs(location.lng - newLocation.lng) > 0.0001) {
+                  setLocation(newLocation);
+                }
+              }}
             />
           </div>
         </div>
@@ -86,10 +105,10 @@ export default function Home() {
                 <div key={i} className="h-48 bg-muted animate-pulse rounded-lg" />
               ))}
             </div>
-          ) : deals?.length === 0 ? (
+          ) : !deals?.length ? (
             <p className="text-muted-foreground">No deals found in this area yet.</p>
           ) : (
-            deals?.map((deal) => (
+            deals.map((deal) => (
               <DealCard key={deal.id} deal={deal} />
             ))
           )}
