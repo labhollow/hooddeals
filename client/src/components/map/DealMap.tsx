@@ -18,21 +18,39 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
 
   // Initialize map
   useEffect(() => {
+    let isMounted = true;
+
     async function initMap() {
       try {
         const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+        console.log('API Key available:', !!apiKey); // Debug log
+
         if (!apiKey) {
           throw new Error('Google Maps API key is missing');
         }
 
-        console.log('Starting Google Maps initialization...');
-        await loadGoogleMaps(apiKey);
-        console.log('Google Maps API loaded, creating map...');
-
+        // Check if map container is ready
         if (!mapRef.current) {
-          throw new Error('Map container not found');
+          console.log('Map container not ready, retrying...'); // Debug log
+          return;
         }
 
+        console.log('Map container dimensions:', {
+          width: mapRef.current.offsetWidth,
+          height: mapRef.current.offsetHeight
+        }); // Debug log
+
+        console.log('Starting Google Maps initialization...');
+        await loadGoogleMaps(apiKey);
+        console.log('Google Maps API loaded');
+
+        // Check if component is still mounted
+        if (!isMounted) {
+          console.log('Component unmounted, aborting map creation');
+          return;
+        }
+
+        console.log('Creating map...');
         const map = new google.maps.Map(mapRef.current, {
           center,
           zoom: 13,
@@ -58,15 +76,33 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
         });
 
         console.log('Map created successfully');
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       } catch (err) {
         console.error('Map initialization failed:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load map');
-        setIsLoading(false);
+        if (isMounted) {
+          setError(err instanceof Error ? err.message : 'Failed to load map');
+          setIsLoading(false);
+        }
       }
     }
 
-    initMap();
+    // Retry initialization if container isn't ready
+    const retryInterval = setInterval(() => {
+      if (mapRef.current) {
+        clearInterval(retryInterval);
+        initMap();
+      }
+    }, 100);
+
+    return () => {
+      isMounted = false;
+      clearInterval(retryInterval);
+      if (googleMapRef.current) {
+        google.maps.event.clearInstanceListeners(googleMapRef.current);
+      }
+    };
   }, [center]);
 
   // Update markers when deals change
@@ -141,7 +177,11 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
     <div 
       ref={mapRef} 
       className="w-full h-full" 
-      style={{ minHeight: '400px' }}
+      style={{ 
+        minHeight: '400px', 
+        position: 'relative',
+        background: '#f5f5f5' // Add background to make container visible
+      }}
     />
   );
 }
