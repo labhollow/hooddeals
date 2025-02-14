@@ -18,18 +18,20 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
 
   // Initialize map
   useEffect(() => {
-    const initMap = async () => {
+    async function initMap() {
       try {
         const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
         if (!apiKey) {
-          setError('Google Maps API key is missing');
-          setIsLoading(false);
-          return;
+          throw new Error('Google Maps API key is missing');
         }
 
+        console.log('Starting Google Maps initialization...');
         await loadGoogleMaps(apiKey);
+        console.log('Google Maps API loaded, creating map...');
 
-        if (!mapRef.current) return;
+        if (!mapRef.current) {
+          throw new Error('Map container not found');
+        }
 
         const map = new google.maps.Map(mapRef.current, {
           center,
@@ -55,16 +57,17 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
           }
         });
 
+        console.log('Map created successfully');
         setIsLoading(false);
       } catch (err) {
-        console.error('Failed to load Google Maps:', err);
-        setError('Failed to load Google Maps');
+        console.error('Map initialization failed:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load map');
         setIsLoading(false);
       }
-    };
+    }
 
     initMap();
-  }, []);
+  }, [center]);
 
   // Update markers when deals change
   useEffect(() => {
@@ -112,12 +115,6 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
     });
   }, [deals]);
 
-  // Update center when prop changes
-  useEffect(() => {
-    if (!googleMapRef.current) return;
-    googleMapRef.current.setCenter(center);
-  }, [center]);
-
   if (error) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-muted/50">
@@ -140,5 +137,11 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
     );
   }
 
-  return <div ref={mapRef} className="w-full h-full" />;
+  return (
+    <div 
+      ref={mapRef} 
+      className="w-full h-full" 
+      style={{ minHeight: '400px' }}
+    />
+  );
 }

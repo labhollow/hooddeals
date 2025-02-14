@@ -2,18 +2,22 @@ import { Loader } from '@googlemaps/js-api-loader';
 import type { Feature, Point, Polygon } from 'geojson';
 
 let mapsLoader: Loader;
-let loadPromise: Promise<typeof google>;
 
 export async function loadGoogleMaps(apiKey: string): Promise<void> {
-  if (!loadPromise) {
-    mapsLoader = new Loader({
-      apiKey,
-      version: "weekly",
-      libraries: ["places", "drawing"],
-    });
-    loadPromise = mapsLoader.load();
+  try {
+    if (!mapsLoader) {
+      mapsLoader = new Loader({
+        apiKey,
+        version: "weekly",
+        libraries: ["places", "drawing"],
+      });
+    }
+    await mapsLoader.load();
+    console.log('Google Maps loaded successfully');
+  } catch (error) {
+    console.error('Error loading Google Maps:', error);
+    throw error;
   }
-  await loadPromise;
 }
 
 export function createGeoJSONCircle(center: [number, number], radiusInKm: number): Feature<Polygon> {
