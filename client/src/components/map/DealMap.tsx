@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { loadGoogleMaps } from '@/lib/maps';
 import type { Deal } from '@shared/schema';
+import { AlertCircle } from 'lucide-react';
 
 interface DealMapProps {
   deals: Deal[];
@@ -12,41 +13,52 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
   const mapRef = useRef<HTMLDivElement>(null);
   const googleMapRef = useRef<google.maps.Map>();
   const markersRef = useRef<google.maps.Marker[]>([]);
+  const [error, setError] = useState<string>();
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
     if (!apiKey) {
-      console.error('Google Maps API key not found');
+      setError('Google Maps API key is missing');
+      setIsLoading(false);
       return;
     }
 
-    loadGoogleMaps(apiKey).then(() => {
-      if (!mapRef.current) return;
+    loadGoogleMaps(apiKey)
+      .then(() => {
+        if (!mapRef.current) return;
 
-      const map = new google.maps.Map(mapRef.current, {
-        center,
-        zoom: 13,
-        styles: [
-          {
-            featureType: "poi",
-            elementType: "labels",
-            stylers: [{ visibility: "off" }]
+        const map = new google.maps.Map(mapRef.current, {
+          center,
+          zoom: 13,
+          styles: [
+            {
+              featureType: "poi",
+              elementType: "labels",
+              stylers: [{ visibility: "off" }]
+            }
+          ]
+        });
+
+        googleMapRef.current = map;
+
+        map.addListener('center_changed', () => {
+          const newCenter = map.getCenter();
+          if (newCenter && onLocationChange) {
+            onLocationChange({
+              lat: newCenter.lat(),
+              lng: newCenter.lng()
+            });
           }
-        ]
-      });
+        });
 
-      googleMapRef.current = map;
-
-      map.addListener('center_changed', () => {
-        const newCenter = map.getCenter();
-        if (newCenter && onLocationChange) {
-          onLocationChange({
-            lat: newCenter.lat(),
-            lng: newCenter.lng()
-          });
-        }
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        console.error('Failed to load Google Maps:', err);
+        setError('Failed to load Google Maps');
+        setIsLoading(false);
       });
-    });
   }, []);
 
   useEffect(() => {
@@ -98,6 +110,28 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
     if (!googleMapRef.current) return;
     googleMapRef.current.setCenter(center);
   }, [center]);
+
+  if (error) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-muted/50">
+        <div className="text-center space-y-2">
+          <AlertCircle className="h-8 w-8 text-destructive mx-auto" />
+          <p className="text-sm text-muted-foreground">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-muted/50">
+        <div className="text-center">
+          <div className="h-8 w-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin mx-auto" />
+          <p className="text-sm text-muted-foreground mt-2">Loading map...</p>
+        </div>
+      </div>
+    );
+  }
 
   return <div ref={mapRef} className="w-full h-full" />;
 }
