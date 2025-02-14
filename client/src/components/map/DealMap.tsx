@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { loadGoogleMaps } from '@/lib/maps';
-import type { Deal } from '@shared/schema';
-import { AlertCircle } from 'lucide-react';
+import { useEffect, useRef, useState, useLayoutEffect } from "react";
+import { loadGoogleMaps } from "@/lib/maps";
+import type { Deal } from "@shared/schema";
+import { AlertCircle } from "lucide-react";
 
 interface DealMapProps {
   deals: Deal[];
@@ -9,95 +9,101 @@ interface DealMapProps {
   onLocationChange?: (location: { lat: number; lng: number }) => void;
 }
 
-export default function DealMap({ deals, center, onLocationChange }: DealMapProps) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const googleMapRef = useRef<google.maps.Map>();
+export default function DealMap({
+  deals,
+  center,
+  onLocationChange,
+}: DealMapProps) {
+  const mapRef = useRef<HTMLDivElement | null>(null);
+  const googleMapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.Marker[]>([]);
   const [error, setError] = useState<string>();
   const [isLoading, setIsLoading] = useState(true);
 
-  // Initialize map
-  useEffect(() => {
+  // UseLayoutEffect to ensure the DOM is ready
+  useLayoutEffect(() => {
     const initMap = async () => {
-      try {
-        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-        if (!apiKey) {
-          throw new Error('Google Maps API key is missing');
-        }
+      if (mapRef.current) {
+        console.log("Map container is available, initializing map...");
+        try {
+          const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+          if (!apiKey) throw new Error("Google Maps API key is missing");
 
-        if (!mapRef.current) {
-          throw new Error('Map container not found');
-        }
+          console.log("Loading Google Maps script...");
+          await loadGoogleMaps(apiKey);
+          console.log("Google Maps script loaded!");
 
-        await loadGoogleMaps(apiKey);
+          const map = new google.maps.Map(mapRef.current, {
+            center,
+            zoom: 13,
+            styles: [
+              {
+                featureType: "poi",
+                elementType: "labels",
+                stylers: [{ visibility: "off" }],
+              },
+            ],
+            mapTypeControl: false,
+            fullscreenControl: false,
+            streetViewControl: false,
+          });
 
-        const map = new google.maps.Map(mapRef.current, {
-          center,
-          zoom: 13,
-          styles: [
-            {
-              featureType: "poi",
-              elementType: "labels",
-              stylers: [{ visibility: "off" }]
+          googleMapRef.current = map;
+
+          map.addListener("center_changed", () => {
+            const newCenter = map.getCenter();
+            if (newCenter && onLocationChange) {
+              onLocationChange({
+                lat: newCenter.lat(),
+                lng: newCenter.lng(),
+              });
             }
-          ],
-          mapTypeControl: false,
-          fullscreenControl: false,
-          streetViewControl: false
-        });
+          });
 
-        googleMapRef.current = map;
-
-        map.addListener('center_changed', () => {
-          const newCenter = map.getCenter();
-          if (newCenter && onLocationChange) {
-            onLocationChange({
-              lat: newCenter.lat(),
-              lng: newCenter.lng()
-            });
-          }
-        });
-
-        setIsLoading(false);
-      } catch (err) {
-        console.error('Map initialization failed:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load map');
-        setIsLoading(false);
+          setIsLoading(false);
+        } catch (err) {
+          console.error("Map initialization failed:", err);
+          setError(err instanceof Error ? err.message : "Failed to load map");
+          setIsLoading(false);
+        }
+      } else {
+        console.log("Map container not found, retrying...");
+        setTimeout(initMap, 100000); // Retry every 100ms if the container is not ready
       }
     };
 
-    initMap();
+    initMap(); // Start map initialization
 
     return () => {
       if (googleMapRef.current) {
         google.maps.event.clearInstanceListeners(googleMapRef.current);
       }
     };
-  }, [center.lat, center.lng]); // Only reinitialize when center coordinates change
+  }, [center, onLocationChange]);
 
-  // Update markers when deals change
   useEffect(() => {
     if (!googleMapRef.current) return;
 
-    // Clear existing markers
-    markersRef.current.forEach(marker => marker.setMap(null));
+    markersRef.current.forEach((marker) => marker.setMap(null));
     markersRef.current = [];
 
-    // Add new markers
-    deals.forEach(deal => {
+    deals.forEach((deal) => {
       try {
-        const location = deal.location as { type: string; coordinates: [number, number] };
+        const location = deal.location as {
+          type: string;
+          coordinates: [number, number];
+        };
         if (!location || !location.coordinates) {
-          console.error('Invalid deal location:', deal);
+          console.error("Invalid deal location:", deal);
           return;
         }
 
         const [lng, lat] = location.coordinates;
-        console.log('Adding marker at:', { lat, lng }); // Debug log
+        console.log("Adding marker at:", { lat, lng });
 
         const marker = new google.maps.Marker({
           position: { lat, lng },
-          map: googleMapRef.current,
+          map: googleMapRef.current!,
           title: deal.title,
           icon: {
             path: google.maps.SymbolPath.CIRCLE,
@@ -106,7 +112,7 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
             fillOpacity: 0.8,
             strokeWeight: 1,
             strokeColor: "#ffffff",
-          }
+          },
         });
 
         const infoWindow = new google.maps.InfoWindow({
@@ -116,16 +122,16 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
               <p class="text-sm">${deal.description}</p>
               <p class="text-sm font-medium mt-1">${deal.discountPercent}% off</p>
             </div>
-          `
+          `,
         });
 
-        marker.addListener('click', () => {
-          infoWindow.open(googleMapRef.current, marker);
+        marker.addListener("click", () => {
+          infoWindow.open(googleMapRef.current!, marker);
         });
 
         markersRef.current.push(marker);
       } catch (error) {
-        console.error('Error adding marker for deal:', deal, error);
+        console.error("Error adding marker for deal:", deal, error);
       }
     });
   }, [deals]);
@@ -153,9 +159,9 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
   }
 
   return (
-    <div 
-      ref={mapRef} 
-      className="w-full h-full min-h-[400px] rounded-lg overflow-hidden" 
+    <div
+      ref={mapRef}
+      className="w-full h-full min-h-[400px] rounded-lg overflow-hidden"
     />
   );
 }
