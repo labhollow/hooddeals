@@ -2,9 +2,9 @@ import { Loader } from '@googlemaps/js-api-loader';
 import type { Feature, Point, Polygon } from 'geojson';
 
 let mapsLoader: Loader;
-let loadPromise: Promise<void>;
+let loadPromise: Promise<typeof google>;
 
-export function loadGoogleMaps(apiKey: string): Promise<void> {
+export async function loadGoogleMaps(apiKey: string): Promise<void> {
   if (!loadPromise) {
     mapsLoader = new Loader({
       apiKey,
@@ -13,7 +13,7 @@ export function loadGoogleMaps(apiKey: string): Promise<void> {
     });
     loadPromise = mapsLoader.load();
   }
-  return loadPromise;
+  await loadPromise;
 }
 
 export function createGeoJSONCircle(center: [number, number], radiusInKm: number): Feature<Polygon> {

@@ -16,16 +16,19 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
   const [error, setError] = useState<string>();
   const [isLoading, setIsLoading] = useState(true);
 
+  // Initialize map
   useEffect(() => {
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-    if (!apiKey) {
-      setError('Google Maps API key is missing');
-      setIsLoading(false);
-      return;
-    }
+    const initMap = async () => {
+      try {
+        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+        if (!apiKey) {
+          setError('Google Maps API key is missing');
+          setIsLoading(false);
+          return;
+        }
 
-    loadGoogleMaps(apiKey)
-      .then(() => {
+        await loadGoogleMaps(apiKey);
+
         if (!mapRef.current) return;
 
         const map = new google.maps.Map(mapRef.current, {
@@ -53,14 +56,17 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
         });
 
         setIsLoading(false);
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error('Failed to load Google Maps:', err);
         setError('Failed to load Google Maps');
         setIsLoading(false);
-      });
+      }
+    };
+
+    initMap();
   }, []);
 
+  // Update markers when deals change
   useEffect(() => {
     if (!googleMapRef.current) return;
 
@@ -106,6 +112,7 @@ export default function DealMap({ deals, center, onLocationChange }: DealMapProp
     });
   }, [deals]);
 
+  // Update center when prop changes
   useEffect(() => {
     if (!googleMapRef.current) return;
     googleMapRef.current.setCenter(center);
