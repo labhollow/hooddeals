@@ -1,21 +1,19 @@
+import { Loader } from '@googlemaps/js-api-loader';
 import type { Feature, Point, Polygon } from 'geojson';
 
-// Load Google Maps API with a script tag
-let googleMapsPromise: Promise<void>;
+let mapsLoader: Loader;
+let loadPromise: Promise<void>;
 
 export function loadGoogleMaps(apiKey: string): Promise<void> {
-  if (!googleMapsPromise) {
-    googleMapsPromise = new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,drawing`;
-      script.async = true;
-      script.defer = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error('Failed to load Google Maps API'));
-      document.head.appendChild(script);
+  if (!loadPromise) {
+    mapsLoader = new Loader({
+      apiKey,
+      version: "weekly",
+      libraries: ["places", "drawing"],
     });
+    loadPromise = mapsLoader.load();
   }
-  return googleMapsPromise;
+  return loadPromise;
 }
 
 export function createGeoJSONCircle(center: [number, number], radiusInKm: number): Feature<Polygon> {
