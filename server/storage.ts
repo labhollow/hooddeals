@@ -55,9 +55,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDealsInArea(lat: number, lng: number, radius: number): Promise<Deal[]> {
-    // Use PostGIS to find deals within radius km of the point
+    // Create point with coordinates in the correct order (longitude, latitude)
     const point = `POINT(${lng} ${lat})`;
-    return await db.select().from(deals).where(
+    console.log('Searching for deals near:', { lat, lng, radius });
+    console.log('PostGIS query point:', point);
+
+    // First verify if we have any deals at all
+    const allDeals = await db.select().from(deals);
+    console.log('All deals in database:', allDeals);
+
+    // Then perform the spatial query
+    const nearbyDeals = await db.select().from(deals).where(
       and(
         eq(deals.status, "active"),
         sql`ST_DWithin(
@@ -68,6 +76,9 @@ export class DatabaseStorage implements IStorage {
         )`
       )
     );
+
+    console.log('Found nearby deals:', nearbyDeals);
+    return nearbyDeals;
   }
 
   async getDealsByBusiness(businessId: number): Promise<Deal[]> {
