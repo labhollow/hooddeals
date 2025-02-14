@@ -1,18 +1,20 @@
 import { deals, users, bookings, type User, type InsertUser, type Deal, type InsertDeal, type Booking, type InsertBooking } from "@shared/schema";
+import { db } from "./db";
+import { eq, and, sql } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  
+
   // Deal operations
   createDeal(deal: InsertDeal): Promise<Deal>;
   getDeal(id: number): Promise<Deal | undefined>;
   getDealsInArea(lat: number, lng: number, radius: number): Promise<Deal[]>;
   getDealsByBusiness(businessId: number): Promise<Deal[]>;
   updateDealCustomers(id: number, count: number): Promise<Deal>;
-  
+
   // Booking operations
   createBooking(booking: InsertBooking): Promise<Booking>;
   getBookingsByDeal(dealId: number): Promise<Booking[]>;
@@ -20,108 +22,85 @@ export interface IStorage {
   updateBookingStatus(id: number, status: string, stripePaymentId?: string): Promise<Booking>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private deals: Map<number, Deal>;
-  private bookings: Map<number, Booking>;
-  private currentUserId: number;
-  private currentDealId: number;
-  private currentBookingId: number;
-
-  constructor() {
-    this.users = new Map();
-    this.deals = new Map();
-    this.bookings = new Map();
-    this.currentUserId = 1;
-    this.currentDealId = 1;
-    this.currentBookingId = 1;
-  }
-
+export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.currentUserId++;
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const [user] = await db.insert(users).values(insertUser).returning();
     return user;
   }
 
   async createDeal(insertDeal: InsertDeal): Promise<Deal> {
-    const id = this.currentDealId++;
-    const deal: Deal = {
-      ...insertDeal,
-      id,
-      currentCustomers: 0,
-      status: "active",
-    };
-    this.deals.set(id, deal);
+    const [deal] = await db.insert(deals)
+      .values({
+        ...insertDeal,
+        currentCustomers: 0,
+        status: "active"
+      })
+      .returning();
     return deal;
   }
 
   async getDeal(id: number): Promise<Deal | undefined> {
-    return this.deals.get(id);
+    const [deal] = await db.select().from(deals).where(eq(deals.id, id));
+    return deal;
   }
 
   async getDealsInArea(lat: number, lng: number, radius: number): Promise<Deal[]> {
-    // Simple distance calculation for MVP
-    return Array.from(this.deals.values()).filter((deal) => {
-      const dealPoint = deal.location as { coordinates: [number, number] };
-      const [dealLng, dealLat] = dealPoint.coordinates;
-      const distance = Math.sqrt(
-        Math.pow(dealLat - lat, 2) + Math.pow(dealLng - lng, 2)
-      );
-      return distance <= radius;
-    });
-  }
-
-  async getDealsByBusiness(businessId: number): Promise<Deal[]> {
-    return Array.from(this.deals.values()).filter(
-      (deal) => deal.businessId === businessId
+    // Use PostGIS to find deals within radius km of the point
+    const point = `POINT(${lng} ${lat})`;
+    return await db.select().from(deals).where(
+      and(
+        eq(deals.status, "active"),
+        sql`ST_DWithin(
+          ST_GeomFromGeoJSON(${deals.location}), 
+          ST_SetSRID(ST_GeomFromText(${point}), 4326), 
+          ${radius * 1000}
+        )`
+      )
     );
   }
 
+  async getDealsByBusiness(businessId: number): Promise<Deal[]> {
+    return db.select().from(deals).where(eq(deals.businessId, businessId));
+  }
+
   async updateDealCustomers(id: number, count: number): Promise<Deal> {
-    const deal = await this.getDeal(id);
+    const [deal] = await db
+      .update(deals)
+      .set({ currentCustomers: count })
+      .where(eq(deals.id, id))
+      .returning();
+
     if (!deal) throw new Error("Deal not found");
-    
-    const updatedDeal = {
-      ...deal,
-      currentCustomers: count,
-    };
-    this.deals.set(id, updatedDeal);
-    return updatedDeal;
+    return deal;
   }
 
   async createBooking(insertBooking: InsertBooking): Promise<Booking> {
-    const id = this.currentBookingId++;
-    const booking: Booking = {
-      ...insertBooking,
-      id,
-      status: "pending",
-      stripePaymentId: null,
-    };
-    this.bookings.set(id, booking);
+    const [booking] = await db.insert(bookings)
+      .values({
+        ...insertBooking,
+        status: "pending",
+        stripePaymentId: null
+      })
+      .returning();
     return booking;
   }
 
   async getBookingsByDeal(dealId: number): Promise<Booking[]> {
-    return Array.from(this.bookings.values()).filter(
-      (booking) => booking.dealId === dealId
-    );
+    return db.select().from(bookings).where(eq(bookings.dealId, dealId));
   }
 
   async getBookingsByUser(userId: number): Promise<Booking[]> {
-    return Array.from(this.bookings.values()).filter(
-      (booking) => booking.userId === userId
-    );
+    return db.select().from(bookings).where(eq(bookings.userId, userId));
   }
 
   async updateBookingStatus(
@@ -129,17 +108,18 @@ export class MemStorage implements IStorage {
     status: string,
     stripePaymentId?: string
   ): Promise<Booking> {
-    const booking = this.bookings.get(id);
-    if (!booking) throw new Error("Booking not found");
+    const [booking] = await db
+      .update(bookings)
+      .set({
+        status,
+        stripePaymentId: stripePaymentId || null
+      })
+      .where(eq(bookings.id, id))
+      .returning();
 
-    const updatedBooking = {
-      ...booking,
-      status,
-      stripePaymentId: stripePaymentId || booking.stripePaymentId,
-    };
-    this.bookings.set(id, updatedBooking);
-    return updatedBooking;
+    if (!booking) throw new Error("Booking not found");
+    return booking;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
